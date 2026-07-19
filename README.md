@@ -79,6 +79,18 @@ curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region
 curl -X POST "http://localhost:4000/v1/sync/arbeitnow?text=Product%20Analyst"
 ```
 
+Единый поиск по пользовательскому профилю автоматически расширяет название
+должности и опрашивает выбранные регионы:
+
+```bash
+curl -X POST "http://localhost:4000/v1/search" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"Product Analyst","regions":["europe","latam","apac"],"aliases":["Growth Analyst"]}'
+```
+
+Тот же поиск запускается кнопкой «Найти вакансии» в интерфейсе. Профиль и
+дополнительные названия должности сохраняются локально в браузере.
+
 Без Docker и `DATABASE_URL` API хранит найденные вакансии в памяти до
 перезапуска процесса. Jobicy и Arbeitnow не требуют API-ключей; карточки всегда
 ведут на оригинальную страницу источника. PostgreSQL нужен для постоянного

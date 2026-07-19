@@ -1,11 +1,17 @@
 import {
+  expandRoleTitles,
   filterJobs,
   sampleJobs,
   type Job,
+  type JobRegion,
   type JobSource,
   type WorkplaceType
 } from "@find-job/domain";
-import { createServer, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse
+} from "node:http";
 import { ArbeitnowConnector } from "./connectors/arbeitnow.js";
 import { JobicyConnector, type JobicyRegion } from "./connectors/jobicy.js";
 import { createDatabase } from "./database.js";
@@ -37,10 +43,31 @@ if (repository) {
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Origin": webOrigin,
     "Content-Type": "application/json; charset=utf-8"
   });
   response.end(JSON.stringify(body));
+}
+
+async function readJsonBody(request: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 32_768) throw new Error("Request body is too large");
+    chunks.push(buffer);
+  }
+
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+}
+
+function isJobRegion(value: unknown): value is JobRegion {
+  return value === "europe" || value === "latam" || value === "apac";
 }
 
 function parseJobFilters(requestUrl: URL) {
@@ -138,6 +165,11 @@ const server = createServer(async (request, response) => {
       `http://${request.headers.host}`
     );
 
+    if (request.method === "OPTIONS") {
+      sendJson(response, 204, null);
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/health") {
       sendJson(response, 200, {
         status: "ok",
@@ -186,6 +218,123 @@ const server = createServer(async (request, response) => {
           sources: [...new Set(jobs.map((job) => job.source))],
           storage: repository ? "postgres" : "memory",
           generatedAt: new Date().toISOString()
+        }
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/search") {
+      const body = await readJsonBody(request);
+
+      if (!body || typeof body !== "object") {
+        sendJson(response, 400, {
+          error: "invalid_profile",
+          message: "Search profile must be a JSON object"
+        });
+        return;
+      }
+
+      const candidate = body as Record<string, unknown>;
+      const role =
+        typeof candidate.role === "string" ? candidate.role.trim() : "";
+      const customAliases = Array.isArray(candidate.aliases)
+        ? candidate.aliases.filter(
+            (alias): alias is string => typeof alias === "string"
+          )
+        : [];
+      const requestedRegions = Array.isArray(candidate.regions)
+        ? candidate.regions.filter(isJobRegion)
+        : [];
+      const regions: JobRegion[] =
+        requestedRegions.length > 0
+          ? [...new Set(requestedRegions)]
+          : ["europe", "latam", "apac"];
+
+      if (role.length < 2) {
+        sendJson(response, 400, {
+          error: "invalid_profile",
+          message: "Role must contain at least two characters"
+        });
+        return;
+      }
+
+      const titles = expandRoleTitles(role, customAliases).slice(0, 6);
+      const jobicy = new JobicyConnector();
+      const arbeitnow = new ArbeitnowConnector();
+      const searches: Array<
+        Promise<{
+          source: JobSource;
+          query: string;
+          region?: JobRegion;
+          fetched: number;
+        }>
+      > = [];
+
+      for (const region of regions) {
+        for (const title of titles.slice(0, 3)) {
+          searches.push(
+            executeSync(
+              repository,
+              "jobicy",
+              { text: title, region, count: 20 },
+              () => jobicy.search({ text: title, region, count: 20 })
+            ).then((result) => ({
+              source: "jobicy",
+              query: title,
+              region,
+              fetched: result.data.fetched
+            }))
+          );
+        }
+      }
+
+      if (regions.includes("europe")) {
+        searches.push(
+          executeSync(
+            repository,
+            "arbeitnow",
+            { text: role, aliases: titles.slice(1), page: 1 },
+            () =>
+              arbeitnow.search({
+                text: role,
+                aliases: titles.slice(1),
+                page: 1
+              })
+          ).then((result) => ({
+            source: "arbeitnow",
+            query: role,
+            fetched: result.data.fetched
+          }))
+        );
+      }
+
+      const settled = await Promise.allSettled(searches);
+      const completed = settled.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []
+      );
+      const failed = settled.length - completed.length;
+
+      if (completed.length === 0) {
+        sendJson(response, 502, {
+          error: "search_failed",
+          message: "All international sources failed"
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        data: {
+          profile: { role, aliases: titles.slice(1), regions },
+          fetched: completed.reduce(
+            (total, result) => total + result.fetched,
+            0
+          ),
+          searches: completed.length,
+          failed
+        },
+        meta: {
+          sources: [...new Set(completed.map((result) => result.source))],
+          queries: completed
         }
       });
       return;

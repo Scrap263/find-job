@@ -52,4 +52,30 @@ describe("ArbeitnowConnector", () => {
     assert.equal(result.jobs.length, 1);
     assert.equal(result.jobs[0]?.externalId, job.slug);
   });
+
+  it("matches alternative role titles", async () => {
+    const connector = new ArbeitnowConnector(async () =>
+      Response.json({
+        data: [
+          job,
+          {
+            ...job,
+            slug: "growth-analyst",
+            title: "Growth Analyst",
+            description: "Own activation and retention metrics."
+          }
+        ]
+      })
+    );
+
+    const result = await connector.search({
+      text: "Product Analyst",
+      aliases: ["Growth Analyst"]
+    });
+
+    assert.deepEqual(
+      result.jobs.map((item) => item.externalId),
+      [job.slug, "growth-analyst"]
+    );
+  });
 });

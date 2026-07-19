@@ -48,7 +48,7 @@ export class ArbeitnowConnector {
     this.fetcher = fetcher;
   }
 
-  async search(input: { text: string; page?: number }) {
+  async search(input: { text: string; aliases?: string[]; page?: number }) {
     const url = new URL("https://www.arbeitnow.com/api/job-board-api");
     url.searchParams.set("page", String(Math.max(1, input.page ?? 1)));
 
@@ -64,13 +64,28 @@ export class ArbeitnowConnector {
     }
 
     const payload = (await response.json()) as ArbeitnowResponse;
-    const query = input.text.trim().toLowerCase();
-    const items = query
+    const queries = [input.text, ...(input.aliases ?? [])]
+      .map((query) => query.trim().toLowerCase())
+      .filter(Boolean);
+    const items = queries.length
       ? payload.data.filter((job) =>
-          [job.title, job.description, job.company_name, ...job.tags]
-            .join(" ")
-            .toLowerCase()
-            .includes(query)
+          queries.some((query) => {
+            const title = job.title.toLowerCase();
+            const searchableText = [
+              job.title,
+              job.description,
+              job.company_name,
+              ...job.tags
+            ]
+              .join(" ")
+              .toLowerCase();
+            const tokens = query.split(/\s+/).filter((token) => token.length > 2);
+
+            return (
+              searchableText.includes(query) ||
+              (tokens.length > 0 && tokens.every((token) => title.includes(token)))
+            );
+          })
         )
       : payload.data;
 

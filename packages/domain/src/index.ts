@@ -1,5 +1,91 @@
 export type WorkplaceType = "remote" | "hybrid" | "onsite";
 export type JobSource = "jobicy" | "arbeitnow" | "greenhouse" | "lever";
+export type JobRegion = "europe" | "latam" | "apac";
+
+export type SearchProfile = {
+  role: string;
+  regions: JobRegion[];
+  aliases: string[];
+};
+
+export const defaultSearchProfile: SearchProfile = {
+  role: "Product Analyst",
+  regions: ["europe", "latam", "apac"],
+  aliases: []
+};
+
+const roleAliasGroups = [
+  {
+    patterns: ["product analyst", "product data analyst"],
+    titles: [
+      "Product Analyst",
+      "Product Data Analyst",
+      "Growth Analyst",
+      "Product Insights Analyst",
+      "BI Analyst"
+    ]
+  },
+  {
+    patterns: ["data analyst", "business intelligence analyst", "bi analyst"],
+    titles: [
+      "Data Analyst",
+      "Business Intelligence Analyst",
+      "BI Analyst",
+      "Insights Analyst",
+      "Reporting Analyst"
+    ]
+  },
+  {
+    patterns: ["frontend developer", "front end developer", "frontend engineer"],
+    titles: [
+      "Frontend Developer",
+      "Frontend Engineer",
+      "React Developer",
+      "UI Engineer",
+      "Web Developer"
+    ]
+  },
+  {
+    patterns: ["backend developer", "backend engineer", "back end developer"],
+    titles: [
+      "Backend Developer",
+      "Backend Engineer",
+      "Software Engineer",
+      "API Engineer",
+      "Platform Engineer"
+    ]
+  },
+  {
+    patterns: ["product manager", "product owner"],
+    titles: [
+      "Product Manager",
+      "Product Owner",
+      "Technical Product Manager",
+      "Growth Product Manager",
+      "Product Lead"
+    ]
+  }
+] as const;
+
+export function expandRoleTitles(role: string, customAliases: string[] = []) {
+  const normalizedRole = role.trim().replace(/\s+/g, " ");
+  const roleKey = normalizedRole.toLowerCase();
+  const group = roleAliasGroups.find(({ patterns }) =>
+    patterns.some((pattern) => roleKey === pattern || roleKey.includes(pattern))
+  );
+
+  return [
+    normalizedRole,
+    ...(group?.titles ?? []),
+    ...customAliases.map((alias) => alias.trim())
+  ].filter(
+    (title, index, titles) =>
+      title.length >= 2 &&
+      titles.findIndex(
+        (candidate) => candidate.toLowerCase() === title.toLowerCase()
+      ) === index
+  );
+}
 
 export type Job = {
   id: string;
