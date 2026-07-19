@@ -1,14 +1,25 @@
-import { filterJobs, sampleJobs, type WorkplaceType } from "@find-job/domain";
+import {
+  filterJobs,
+  sampleJobs,
+  type Job,
+  type JobSource,
+  type WorkplaceType
+} from "@find-job/domain";
 import { createServer, type ServerResponse } from "node:http";
-import { HhApiError, HhConnector } from "./connectors/hh.js";
+import { ArbeitnowConnector } from "./connectors/arbeitnow.js";
+import { JobicyConnector, type JobicyRegion } from "./connectors/jobicy.js";
 import { createDatabase } from "./database.js";
-import { JobRepository } from "./job-repository.js";
+import {
+  JobRepository,
+  type JobUpsert
+} from "./job-repository.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? "127.0.0.1";
 const webOrigin = process.env.WEB_ORIGIN ?? "*";
 const database = createDatabase();
 let repository = database ? new JobRepository(database) : null;
+let memoryJobs = [...sampleJobs];
 
 if (repository) {
   try {
@@ -16,7 +27,7 @@ if (repository) {
     console.log("PostgreSQL connection established.");
   } catch (error) {
     console.warn(
-      "PostgreSQL is unavailable; falling back to demo vacancies.",
+      "PostgreSQL is unavailable; using in-memory job storage.",
       error
     );
     await database?.close();
@@ -49,6 +60,77 @@ function parseJobFilters(requestUrl: URL) {
   };
 }
 
+async function executeSync(
+  jobRepository: JobRepository | null,
+  source: JobSource,
+  query: Record<string, unknown>,
+  loader: () => Promise<{ jobs: JobUpsert[]; meta: Record<string, unknown> }>
+) {
+  if (!jobRepository) {
+    const result = await loader();
+    const mergedJobs = new Map(memoryJobs.map((job) => [job.id, job]));
+
+    for (const job of result.jobs) {
+      const canonicalJob: Job = {
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        workplaceType: job.workplaceType,
+        ...(job.salary ? { salary: job.salary } : {}),
+        publishedAt: job.publishedAt,
+        source: job.source,
+        applyUrl: job.applyUrl,
+        match: job.match
+      };
+      mergedJobs.set(canonicalJob.id, canonicalJob);
+    }
+
+    memoryJobs = [...mergedJobs.values()];
+
+    return {
+      data: {
+        runId: null,
+        fetched: result.jobs.length,
+        upserted: result.jobs.length,
+        storage: "memory"
+      },
+      meta: result.meta
+    };
+  }
+
+  const run = await jobRepository.startSync(source, query);
+
+  try {
+    const result = await loader();
+    const upserted = await jobRepository.upsertMany(result.jobs);
+    await jobRepository.completeSync(run, {
+      status: "completed",
+      fetched: result.jobs.length,
+      upserted
+    });
+
+    return {
+      data: {
+        runId: run.id,
+        fetched: result.jobs.length,
+        upserted
+      },
+      meta: result.meta
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown sync error";
+    await jobRepository.completeSync(run, {
+      status: "failed",
+      fetched: 0,
+      upserted: 0,
+      error: message
+    });
+    throw error;
+  }
+}
+
 const server = createServer(async (request, response) => {
   try {
     const requestUrl = new URL(
@@ -60,7 +142,7 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, {
         status: "ok",
         service: "find-job-api",
-        database: repository ? "connected" : "demo",
+        database: repository ? "connected" : "memory",
         timestamp: new Date().toISOString()
       });
       return;
@@ -70,14 +152,22 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, {
         data: [
           {
-            code: "hh",
-            name: "HeadHunter",
-            configured: Boolean(process.env.HH_USER_AGENT),
-            databaseRequired: true
+            code: "jobicy",
+            name: "Jobicy",
+            regions: ["europe", "latam", "apac", "anywhere"],
+            configured: true,
+            databaseRequired: false
+          },
+          {
+            code: "arbeitnow",
+            name: "Arbeitnow",
+            regions: ["europe"],
+            configured: true,
+            databaseRequired: false
           }
         ],
         meta: {
-          database: repository ? "connected" : "demo"
+          database: repository ? "connected" : "memory"
         }
       });
       return;
@@ -87,110 +177,105 @@ const server = createServer(async (request, response) => {
       const filters = parseJobFilters(requestUrl);
       const jobs = repository
         ? await repository.list(filters)
-        : filterJobs(sampleJobs, filters);
+        : filterJobs(memoryJobs, filters);
 
       sendJson(response, 200, {
         data: jobs,
         meta: {
           count: jobs.length,
           sources: [...new Set(jobs.map((job) => job.source))],
-          storage: repository ? "postgres" : "demo",
+          storage: repository ? "postgres" : "memory",
           generatedAt: new Date().toISOString()
         }
       });
       return;
     }
 
-    if (request.method === "POST" && requestUrl.pathname === "/v1/sync/hh") {
-      if (!repository) {
-        sendJson(response, 503, {
-          error: "database_required",
-          message: "Для синхронизации необходимо настроить DATABASE_URL."
-        });
-        return;
-      }
-
-      const userAgent = process.env.HH_USER_AGENT;
-      if (!userAgent) {
-        sendJson(response, 503, {
-          error: "hh_configuration_required",
-          message: "Для синхронизации необходимо настроить HH_USER_AGENT."
-        });
-        return;
-      }
-
-      const search = {
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/sync/jobicy"
+    ) {
+      const regionParam = requestUrl.searchParams.get("region");
+      const region: JobicyRegion =
+        regionParam === "europe" ||
+        regionParam === "latam" ||
+        regionParam === "apac"
+          ? regionParam
+          : "anywhere";
+      const query = {
         text: requestUrl.searchParams.get("text") ?? "Product Analyst",
-        area: requestUrl.searchParams.get("area") ?? "113",
-        perPage: Math.min(
+        region,
+        count: Math.min(
           100,
           Math.max(
             1,
-            Number(requestUrl.searchParams.get("perPage") ?? 20) || 20
+            Number(requestUrl.searchParams.get("count") ?? 50) || 50
           )
         )
       };
-      const run = await repository.startSync("hh", search);
-      const connector = new HhConnector({
-        userAgent,
-        ...(process.env.HH_ACCESS_TOKEN
-          ? { accessToken: process.env.HH_ACCESS_TOKEN }
-          : {})
-      });
+      const connector = new JobicyConnector();
 
       try {
-        const result = await connector.search(search);
-        const upserted = await repository.upsertMany(result.jobs);
-        await repository.completeSync(run, {
-          status: "completed",
-          fetched: result.jobs.length,
-          upserted
-        });
-
-        sendJson(response, 200, {
-          data: {
-            runId: run.id,
-            fetched: result.jobs.length,
-            upserted
-          },
-          meta: result.meta
-        });
+        const result = await executeSync(
+          repository,
+          "jobicy",
+          query,
+          () => connector.search(query)
+        );
+        sendJson(response, 200, result);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown sync error";
-        await repository.completeSync(run, {
-          status: "failed",
-          fetched: 0,
-          upserted: 0,
-          error: message
+        sendJson(response, 502, {
+          error: "jobicy_sync_failed",
+          message
         });
+      }
+      return;
+    }
 
-        if (error instanceof HhApiError) {
-          sendJson(response, error.status === 429 ? 429 : 502, {
-            error: `hh_${error.code}`,
-            message:
-              error.code === "captcha_required"
-                ? "HeadHunter запросил CAPTCHA. Настройте HH_ACCESS_TOKEN."
-                : message
-          });
-          return;
-        }
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/sync/arbeitnow"
+    ) {
+      const query = {
+        text: requestUrl.searchParams.get("text") ?? "Product Analyst",
+        page: Math.max(
+          1,
+          Number(requestUrl.searchParams.get("page") ?? 1) || 1
+        )
+      };
+      const connector = new ArbeitnowConnector();
 
-        throw error;
+      try {
+        const result = await executeSync(
+          repository,
+          "arbeitnow",
+          query,
+          () => connector.search(query)
+        );
+        sendJson(response, 200, result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown sync error";
+        sendJson(response, 502, {
+          error: "arbeitnow_sync_failed",
+          message
+        });
       }
       return;
     }
 
     sendJson(response, 404, {
       error: "not_found",
-      message: "Маршрут не найден"
+      message: "Route not found"
     });
   } catch (error) {
     console.error(error);
     if (!response.headersSent) {
       sendJson(response, 500, {
         error: "internal_error",
-        message: "Не удалось обработать запрос"
+        message: "Unable to process request"
       });
     } else {
       response.end();

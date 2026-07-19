@@ -1,5 +1,5 @@
 export type WorkplaceType = "remote" | "hybrid" | "onsite";
-export type JobSource = "hh" | "greenhouse" | "lever";
+export type JobSource = "jobicy" | "arbeitnow" | "greenhouse" | "lever";
 
 export type Job = {
   id: string;
@@ -60,15 +60,15 @@ const now = Date.now();
 
 export const sampleJobs: Job[] = [
   {
-    id: "hh-101",
+    id: "jobicy-101",
     title: "Senior Product Analyst",
     company: "Finwave",
-    location: "Москва",
+    location: "Lisbon",
     workplaceType: "hybrid",
-    salary: { min: 260_000, max: 340_000, currency: "RUB" },
+    salary: { min: 65_000, max: 82_000, currency: "EUR" },
     publishedAt: new Date(now - day).toISOString(),
-    source: "hh",
-    applyUrl: "https://hh.ru/",
+    source: "jobicy",
+    applyUrl: "https://jobicy.com/jobs",
     match: {
       score: 93,
       matchedSkills: ["SQL", "A/B тесты", "Python", "Amplitude"],
@@ -78,15 +78,15 @@ export const sampleJobs: Job[] = [
     }
   },
   {
-    id: "gh-204",
+    id: "arbeitnow-204",
     title: "Growth Data Analyst",
     company: "Northstar Labs",
     location: "Remote · Europe",
     workplaceType: "remote",
     salary: { min: 3_800, max: 5_200, currency: "EUR" },
     publishedAt: new Date(now - day * 2).toISOString(),
-    source: "greenhouse",
-    applyUrl: "https://www.greenhouse.com/",
+    source: "arbeitnow",
+    applyUrl: "https://www.arbeitnow.com/",
     match: {
       score: 89,
       matchedSkills: ["SQL", "Growth metrics", "Tableau"],
@@ -96,15 +96,15 @@ export const sampleJobs: Job[] = [
     }
   },
   {
-    id: "lever-310",
+    id: "jobicy-310",
     title: "Product Insights Analyst",
     company: "Orbit",
-    location: "Remote",
+    location: "Remote · LATAM",
     workplaceType: "remote",
     salary: { min: 70_000, max: 90_000, currency: "USD" },
     publishedAt: new Date(now - day * 3).toISOString(),
-    source: "lever",
-    applyUrl: "https://www.lever.co/",
+    source: "jobicy",
+    applyUrl: "https://jobicy.com/jobs",
     match: {
       score: 86,
       matchedSkills: ["Product metrics", "SQL", "Looker"],
@@ -114,21 +114,21 @@ export const sampleJobs: Job[] = [
     }
   },
   {
-    id: "hh-118",
-    title: "Продуктовый аналитик",
-    company: "Самокат Тех",
-    location: "Санкт-Петербург",
+    id: "jobicy-118",
+    title: "Product Analyst, Data Platform",
+    company: "NovaPay",
+    location: "São Paulo",
     workplaceType: "hybrid",
-    salary: { min: 230_000, max: 300_000, currency: "RUB" },
+    salary: { min: 42_000, max: 58_000, currency: "USD" },
     publishedAt: new Date(now - day * 2).toISOString(),
-    source: "hh",
-    applyUrl: "https://hh.ru/",
+    source: "jobicy",
+    applyUrl: "https://jobicy.com/jobs",
     match: {
       score: 84,
-      matchedSkills: ["ClickHouse", "SQL", "Эксперименты"],
+      matchedSkills: ["ClickHouse", "SQL", "Experiments"],
       missingSkills: ["Superset"],
       reason:
-        "Совпадает аналитический стек и опыт экспериментов. Вакансия допускает более широкий уровень seniority."
+        "The analytics stack and experimentation experience match; the role is open to candidates across LATAM."
     }
   },
   {
@@ -139,8 +139,8 @@ export const sampleJobs: Job[] = [
     workplaceType: "onsite",
     salary: { min: 4_000, max: 5_500, currency: "EUR" },
     publishedAt: new Date(now - day * 4).toISOString(),
-    source: "greenhouse",
-    applyUrl: "https://www.greenhouse.com/",
+    source: "arbeitnow",
+    applyUrl: "https://www.arbeitnow.com/",
     match: {
       score: 78,
       matchedSkills: ["SQL", "Power BI", "Data modeling"],
@@ -153,7 +153,7 @@ export const sampleJobs: Job[] = [
     id: "lever-335",
     title: "Marketing Data Analyst",
     company: "Brightside",
-    location: "Berlin · Remote",
+    location: "Singapore · Remote",
     workplaceType: "remote",
     publishedAt: new Date(now - day * 5).toISOString(),
     source: "lever",

@@ -60,11 +60,9 @@ npm test
 npm run build
 ```
 
-## PostgreSQL и HeadHunter
+## PostgreSQL и международные источники
 
-Скопируйте `.env.example` в `.env` и укажите контактный `HH_USER_AGENT`.
-Для стабильной синхронизации HeadHunter рекомендуется также
-`HH_ACCESS_TOKEN` зарегистрированного приложения.
+Скопируйте `.env.example` в `.env`, затем запустите PostgreSQL и миграции.
 
 ```bash
 docker compose up -d postgres
@@ -72,12 +70,16 @@ npm run db:migrate
 npm run dev
 ```
 
-Запуск синхронизации:
+Синхронизация global remote вакансий:
 
 ```bash
-curl -X POST "http://localhost:4000/v1/sync/hh?text=Product%20Analyst&area=113"
+curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region=europe"
+curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region=latam"
+curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region=apac"
+curl -X POST "http://localhost:4000/v1/sync/arbeitnow?text=Product%20Analyst"
 ```
 
-Без Docker и `DATABASE_URL` API продолжает работать на демо-данных. Анонимный
-HH API может вернуть требование CAPTCHA; такой ответ отображается как
-`hh_captcha_required`, а не как пустой результат.
+Без Docker и `DATABASE_URL` API хранит найденные вакансии в памяти до
+перезапуска процесса. Jobicy и Arbeitnow не требуют API-ключей; карточки всегда
+ведут на оригинальную страницу источника. PostgreSQL нужен для постоянного
+хранения и истории синхронизаций.

@@ -5,6 +5,7 @@ node_modules/
 # Build output
 .next/
 dist/
+.test-dist/
 build/
 coverage/
 .turbo/
@@ -35,4 +36,3 @@ Thumbs.db
 
 # Generated artifacts
 *.tsbuildinfo
-

@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS job_sources (
 
 INSERT INTO job_sources (code, name)
 VALUES
-  ('hh', 'HeadHunter'),
+  ('jobicy', 'Jobicy'),
+  ('arbeitnow', 'Arbeitnow'),
   ('greenhouse', 'Greenhouse'),
   ('lever', 'Lever')
 ON CONFLICT (code) DO UPDATE SET

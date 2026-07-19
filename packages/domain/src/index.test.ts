@@ -36,7 +36,7 @@ describe("filterJobs", () => {
 
     assert.deepEqual(
       result.map((job) => job.id),
-      ["gh-204", "lever-310"]
+      ["arbeitnow-204", "jobicy-310"]
     );
   });
 });

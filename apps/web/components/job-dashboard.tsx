@@ -16,7 +16,8 @@ const workplaceLabels: Record<WorkplaceType | "all", string> = {
 };
 
 const sourceLabels: Record<Job["source"], string> = {
-  hh: "HeadHunter",
+  jobicy: "Jobicy",
+  arbeitnow: "Arbeitnow",
   greenhouse: "Greenhouse",
   lever: "Lever"
 };
@@ -145,7 +146,7 @@ export function JobDashboard() {
         <div className="search-profile">
           <div className="profile-label">Активный поиск</div>
           <strong>Product Analyst</strong>
-          <span>Москва · Remote</span>
+          <span>Europe · LATAM · APAC</span>
           <button type="button">Настроить</button>
         </div>
 
