@@ -45,6 +45,27 @@ export function JobDashboard() {
   const [minScore, setMinScore] = useState(70);
   const [savedIds, setSavedIds] = useState<Set<string>>(() => new Set());
   const [dataMode, setDataMode] = useState<"api" | "demo">("demo");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function refreshJobs() {
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL ??
+      `${window.location.protocol}//${window.location.hostname}:4000`;
+
+    setIsRefreshing(true);
+
+    try {
+      const response = await fetch(`${apiUrl}/v1/jobs`);
+      if (!response.ok) throw new Error(`API returned ${response.status}`);
+      const payload = (await response.json()) as { data: Job[] };
+      setJobs(payload.data);
+      setDataMode("api");
+    } catch {
+      setDataMode("demo");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -151,8 +172,13 @@ export function JobDashboard() {
               <span />
               {dataMode === "api" ? "API подключён" : "Демо-данные"}
             </span>
-            <button className="secondary-button" type="button">
-              Обновить поиск
+            <button
+              className="secondary-button"
+              disabled={isRefreshing}
+              onClick={() => void refreshJobs()}
+              type="button"
+            >
+              {isRefreshing ? "Обновляем…" : "Обновить поиск"}
             </button>
           </div>
         </header>

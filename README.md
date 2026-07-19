@@ -59,3 +59,25 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## PostgreSQL и HeadHunter
+
+Скопируйте `.env.example` в `.env` и укажите контактный `HH_USER_AGENT`.
+Для стабильной синхронизации HeadHunter рекомендуется также
+`HH_ACCESS_TOKEN` зарегистрированного приложения.
+
+```bash
+docker compose up -d postgres
+npm run db:migrate
+npm run dev
+```
+
+Запуск синхронизации:
+
+```bash
+curl -X POST "http://localhost:4000/v1/sync/hh?text=Product%20Analyst&area=113"
+```
+
+Без Docker и `DATABASE_URL` API продолжает работать на демо-данных. Анонимный
+HH API может вернуть требование CAPTCHA; такой ответ отображается как
+`hh_captcha_required`, а не как пустой результат.
