@@ -1,5 +1,10 @@
 import type { JobUpsert } from "../job-repository.js";
-import { buildMatch, stableJobId, stripHtml } from "./shared.js";
+import {
+  buildMatch,
+  stableJobId,
+  stripHtml,
+  type MatchContext
+} from "./shared.js";
 
 export type JobicyRegion = "europe" | "latam" | "apac" | "anywhere";
 
@@ -31,7 +36,10 @@ function normalizeCurrency(value?: string | null): "RUB" | "USD" | "EUR" | null 
   return null;
 }
 
-export function normalizeJobicyJob(job: JobicyJob): JobUpsert {
+export function normalizeJobicyJob(
+  job: JobicyJob,
+  matchContext?: MatchContext
+): JobUpsert {
   const currency = normalizeCurrency(job.salaryCurrency);
   const salary =
     typeof job.salaryMin === "number" &&
@@ -55,7 +63,12 @@ export function normalizeJobicyJob(job: JobicyJob): JobUpsert {
     publishedAt: job.pubDate,
     source: "jobicy",
     applyUrl: job.url,
-    match: buildMatch(job.jobTitle, job.jobDescription, job.jobIndustry),
+    match: buildMatch(
+      job.jobTitle,
+      job.jobDescription,
+      job.jobIndustry,
+      matchContext
+    ),
     rawPayload: job
   };
 }
@@ -71,6 +84,7 @@ export class JobicyConnector {
     text: string;
     region?: JobicyRegion;
     count?: number;
+    matchContext?: MatchContext;
   }) {
     const url = new URL("https://jobicy.com/api/v2/remote-jobs");
     url.searchParams.set("count", String(Math.min(100, input.count ?? 50)));
@@ -93,7 +107,9 @@ export class JobicyConnector {
     const payload = (await response.json()) as JobicyResponse;
 
     return {
-      jobs: payload.jobs.map(normalizeJobicyJob),
+      jobs: payload.jobs.map((job) =>
+        normalizeJobicyJob(job, input.matchContext ?? { role: input.text })
+      ),
       meta: {
         found: payload.jobCount,
         lastUpdate: payload.lastUpdate,

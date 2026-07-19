@@ -277,7 +277,13 @@ const server = createServer(async (request, response) => {
               repository,
               "jobicy",
               { text: title, region, count: 20 },
-              () => jobicy.search({ text: title, region, count: 20 })
+              () =>
+                jobicy.search({
+                  text: title,
+                  region,
+                  count: 20,
+                  matchContext: { role, aliases: titles.slice(1) }
+                })
             ).then((result) => ({
               source: "jobicy",
               query: title,
@@ -298,7 +304,8 @@ const server = createServer(async (request, response) => {
               arbeitnow.search({
                 text: role,
                 aliases: titles.slice(1),
-                page: 1
+                page: 1,
+                matchContext: { role, aliases: titles.slice(1) }
               })
           ).then((result) => ({
             source: "arbeitnow",

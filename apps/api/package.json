@@ -9,7 +9,7 @@
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "db:migrate": "node --env-file-if-exists=../../.env src/migrate.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.test.json && node --test .test-dist/connectors/jobicy.test.js .test-dist/connectors/arbeitnow.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/connectors/*.test.js"
   },
   "dependencies": {
     "@find-job/domain": "0.1.0",

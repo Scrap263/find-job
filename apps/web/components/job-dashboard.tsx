@@ -478,8 +478,8 @@ export function JobDashboard() {
               <span>✨</span>
               <p>
                 <strong>Почему эти вакансии?</strong>
-                Роль расширена до Product, Growth и Data Analyst с продуктовыми
-                метриками.
+                Ищем «{profile.role}» и близкие названия. Вакансии другого типа
+                роли не проходят порог только за счёт совпавших навыков.
               </p>
             </div>
           </aside>

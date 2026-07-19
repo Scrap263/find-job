@@ -1,5 +1,10 @@
 import type { JobUpsert } from "../job-repository.js";
-import { buildMatch, stableJobId, stripHtml } from "./shared.js";
+import {
+  buildMatch,
+  stableJobId,
+  stripHtml,
+  type MatchContext
+} from "./shared.js";
 
 export type ArbeitnowJob = {
   slug: string;
@@ -25,7 +30,10 @@ type ArbeitnowResponse = {
   };
 };
 
-export function normalizeArbeitnowJob(job: ArbeitnowJob): JobUpsert {
+export function normalizeArbeitnowJob(
+  job: ArbeitnowJob,
+  matchContext?: MatchContext
+): JobUpsert {
   return {
     id: stableJobId("arbeitnow", job.slug),
     externalId: job.slug,
@@ -36,7 +44,7 @@ export function normalizeArbeitnowJob(job: ArbeitnowJob): JobUpsert {
     publishedAt: new Date(job.created_at * 1000).toISOString(),
     source: "arbeitnow",
     applyUrl: job.url,
-    match: buildMatch(job.title, job.description, job.tags),
+    match: buildMatch(job.title, job.description, job.tags, matchContext),
     rawPayload: job
   };
 }
@@ -48,7 +56,12 @@ export class ArbeitnowConnector {
     this.fetcher = fetcher;
   }
 
-  async search(input: { text: string; aliases?: string[]; page?: number }) {
+  async search(input: {
+    text: string;
+    aliases?: string[];
+    page?: number;
+    matchContext?: MatchContext;
+  }) {
     const url = new URL("https://www.arbeitnow.com/api/job-board-api");
     url.searchParams.set("page", String(Math.max(1, input.page ?? 1)));
 
@@ -90,7 +103,15 @@ export class ArbeitnowConnector {
       : payload.data;
 
     return {
-      jobs: items.map(normalizeArbeitnowJob),
+      jobs: items.map((job) =>
+        normalizeArbeitnowJob(
+          job,
+          input.matchContext ?? {
+            role: input.text,
+            aliases: input.aliases
+          }
+        )
+      ),
       meta: {
         fetched: payload.data.length,
         matched: items.length,
