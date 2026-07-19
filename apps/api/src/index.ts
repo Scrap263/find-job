@@ -16,6 +16,12 @@ import { ArbeitnowConnector } from "./connectors/arbeitnow.js";
 import { JobicyConnector, type JobicyRegion } from "./connectors/jobicy.js";
 import { createDatabase } from "./database.js";
 import {
+  createDocxExport,
+  createPdfExport,
+  safeExportFileName,
+  type DocumentExportInput
+} from "./document-export.js";
+import {
   JobRepository,
   type JobUpsert
 } from "./job-repository.js";
@@ -51,6 +57,22 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
+function sendBinary(
+  response: ServerResponse,
+  body: Buffer,
+  contentType: string,
+  fileName: string
+) {
+  response.writeHead(200, {
+    "Access-Control-Expose-Headers": "Content-Disposition",
+    "Access-Control-Allow-Origin": webOrigin,
+    "Content-Disposition": `attachment; filename="application"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    "Content-Length": body.length,
+    "Content-Type": contentType
+  });
+  response.end(body);
+}
+
 async function readJsonBody(request: IncomingMessage) {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -58,7 +80,7 @@ async function readJsonBody(request: IncomingMessage) {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 32_768) throw new Error("Request body is too large");
+    if (size > 131_072) throw new Error("Request body is too large");
     chunks.push(buffer);
   }
 
@@ -68,6 +90,34 @@ async function readJsonBody(request: IncomingMessage) {
 
 function isJobRegion(value: unknown): value is JobRegion {
   return value === "europe" || value === "latam" || value === "apac";
+}
+
+function parseDocumentExportInput(body: unknown): DocumentExportInput | null {
+  if (!body || typeof body !== "object") return null;
+  const candidate = body as Record<string, unknown>;
+  const fields = [
+    "candidateName",
+    "jobTitle",
+    "company",
+    "location",
+    "resumeSummary",
+    "coverLetter"
+  ] as const;
+
+  if (
+    fields.some(
+      (field) =>
+        typeof candidate[field] !== "string" ||
+        candidate[field].trim().length === 0 ||
+        candidate[field].length > 16_000
+    )
+  ) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    fields.map((field) => [field, (candidate[field] as string).trim()])
+  ) as unknown as DocumentExportInput;
 }
 
 function parseJobFilters(requestUrl: URL) {
@@ -220,6 +270,43 @@ const server = createServer(async (request, response) => {
           generatedAt: new Date().toISOString()
         }
       });
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/documents/export"
+    ) {
+      const input = parseDocumentExportInput(await readJsonBody(request));
+      const format = requestUrl.searchParams.get("format");
+
+      if (!input || (format !== "docx" && format !== "pdf")) {
+        sendJson(response, 400, {
+          error: "invalid_document_export",
+          message: "Valid document content and format are required"
+        });
+        return;
+      }
+
+      const baseName = safeExportFileName(input);
+
+      if (format === "docx") {
+        const document = await createDocxExport(input);
+        sendBinary(
+          response,
+          document,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          `${baseName}.docx`
+        );
+      } else {
+        const document = await createPdfExport(input);
+        sendBinary(
+          response,
+          document,
+          "application/pdf",
+          `${baseName}.pdf`
+        );
+      }
       return;
     }
 

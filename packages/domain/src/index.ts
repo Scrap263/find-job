@@ -22,6 +22,22 @@ export type ApplicationDraft = {
   skillsToVerify: string[];
 };
 
+export type ApplicationStatus =
+  | "preparing"
+  | "applied"
+  | "interview"
+  | "offer"
+  | "rejected";
+
+export type TrackedApplication = {
+  jobId: string;
+  title: string;
+  company: string;
+  applyUrl: string;
+  status: ApplicationStatus;
+  updatedAt: string;
+};
+
 export const emptyCandidateProfile: CandidateProfile = {
   name: "",
   headline: "",
@@ -239,6 +255,21 @@ export function generateApplicationDraft(
     usedSkills,
     skillsToVerify
   };
+}
+
+export function upsertTrackedApplication(
+  applications: TrackedApplication[],
+  nextApplication: TrackedApplication
+) {
+  return [
+    nextApplication,
+    ...applications.filter(
+      (application) => application.jobId !== nextApplication.jobId
+    )
+  ].sort(
+    (left, right) =>
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
 }
 
 const day = 86_400_000;

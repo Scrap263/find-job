@@ -7,11 +7,14 @@ import {
   filterJobs,
   generateApplicationDraft,
   sampleJobs,
+  upsertTrackedApplication,
+  type ApplicationStatus,
   type ApplicationDraft,
   type CandidateProfile,
   type Job,
   type JobRegion,
   type SearchProfile,
+  type TrackedApplication,
   type WorkplaceType
 } from "@find-job/domain";
 import { useEffect, useMemo, useState } from "react";
@@ -34,6 +37,14 @@ const regionLabels: Record<JobRegion, string> = {
   europe: "Европа",
   latam: "Латинская Америка",
   apac: "Азия и Океания"
+};
+
+const applicationStatusLabels: Record<ApplicationStatus, string> = {
+  preparing: "Готовлю документы",
+  applied: "Отклик отправлен",
+  interview: "Интервью",
+  offer: "Оффер",
+  rejected: "Отказ"
 };
 
 function formatSalary(job: Job) {
@@ -76,6 +87,10 @@ export function JobDashboard() {
   const [applicationDraft, setApplicationDraft] =
     useState<ApplicationDraft | null>(null);
   const [draftMessage, setDraftMessage] = useState("");
+  const [applications, setApplications] = useState<TrackedApplication[]>([]);
+  const [selectedApplicationStatus, setSelectedApplicationStatus] =
+    useState<ApplicationStatus>("preparing");
+  const [isExporting, setIsExporting] = useState(false);
 
   async function loadJobs() {
     const apiUrl =
@@ -156,6 +171,10 @@ export function JobDashboard() {
     setSelectedJob(job);
     setApplicationDraft(null);
     setDraftMessage("");
+    setSelectedApplicationStatus(
+      applications.find((application) => application.jobId === job.id)
+        ?.status ?? "preparing"
+    );
 
     const storedDraft = window.localStorage.getItem(
       `find-job-draft:${job.id}`
@@ -207,6 +226,97 @@ export function JobDashboard() {
     setDraftMessage("Черновик сохранён в этом браузере.");
   }
 
+  function updateApplication(job: Job, status: ApplicationStatus) {
+    const nextApplications = upsertTrackedApplication(applications, {
+      jobId: job.id,
+      title: job.title,
+      company: job.company,
+      applyUrl: job.applyUrl,
+      status,
+      updatedAt: new Date().toISOString()
+    });
+
+    setApplications(nextApplications);
+    setSelectedApplicationStatus(status);
+    setDraftMessage(`Статус обновлён: ${applicationStatusLabels[status]}.`);
+    window.localStorage.setItem(
+      "find-job-applications",
+      JSON.stringify(nextApplications)
+    );
+  }
+
+  function removeApplication(jobId: string) {
+    const nextApplications = applications.filter(
+      (application) => application.jobId !== jobId
+    );
+
+    setApplications(nextApplications);
+
+    if (nextApplications.length > 0) {
+      window.localStorage.setItem(
+        "find-job-applications",
+        JSON.stringify(nextApplications)
+      );
+    } else {
+      window.localStorage.removeItem("find-job-applications");
+    }
+
+    if (selectedJob?.id === jobId) {
+      setDraftMessage("Вакансия удалена из трекера откликов.");
+    }
+  }
+
+  async function exportApplication(format: "docx" | "pdf") {
+    if (!selectedJob || !applicationDraft) return;
+
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL ??
+      `${window.location.protocol}//${window.location.hostname}:4000`;
+    setIsExporting(true);
+    setDraftMessage("");
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/v1/documents/export?format=${format}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidateName: candidateProfile.name,
+            jobTitle: selectedJob.title,
+            company: selectedJob.company,
+            location: selectedJob.location,
+            resumeSummary: applicationDraft.resumeSummary,
+            coverLetter: applicationDraft.coverLetter
+          })
+        }
+      );
+      if (!response.ok) throw new Error(`API returned ${response.status}`);
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const fileName = encodedName
+        ? decodeURIComponent(encodedName)
+        : `application.${format}`;
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+      setDraftMessage(`Файл ${format.toUpperCase()} подготовлен.`);
+    } catch (error) {
+      setDraftMessage(
+        error instanceof Error
+          ? `Не удалось экспортировать файл: ${error.message}`
+          : "Не удалось экспортировать файл."
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   function clearCandidateData() {
     window.localStorage.removeItem("find-job-candidate");
     if (selectedJob) {
@@ -240,6 +350,23 @@ export function JobDashboard() {
       });
 
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const storedApplications = window.localStorage.getItem(
+      "find-job-applications"
+    );
+    if (!storedApplications) return;
+
+    try {
+      const parsed = JSON.parse(storedApplications) as TrackedApplication[];
+      if (Array.isArray(parsed)) {
+        const timer = window.setTimeout(() => setApplications(parsed), 0);
+        return () => window.clearTimeout(timer);
+      }
+    } catch {
+      window.localStorage.removeItem("find-job-applications");
+    }
   }, []);
 
   useEffect(() => {
@@ -339,6 +466,9 @@ export function JobDashboard() {
           <a className="nav-item" href="#applications">
             <span>↗</span>
             Отклики
+            {applications.length > 0 && (
+              <span className="nav-badge">{applications.length}</span>
+            )}
           </a>
           <a className="nav-item" href="#documents">
             <span>▤</span>
@@ -698,6 +828,75 @@ export function JobDashboard() {
             )}
           </div>
         </section>
+
+        <section className="application-tracker" id="applications">
+          <div className="tracker-heading">
+            <div>
+              <p className="eyebrow">Воронка</p>
+              <h2>Отклики</h2>
+            </div>
+            <span>{applications.length} вакансий</span>
+          </div>
+
+          {applications.length === 0 ? (
+            <p className="tracker-empty">
+              Разберите вакансию и добавьте её в отклики — статус появится здесь.
+            </p>
+          ) : (
+            <div className="tracker-list">
+              {applications.map((application) => (
+                <article className="tracker-row" key={application.jobId}>
+                  <div>
+                    <strong>{application.title}</strong>
+                    <span>{application.company}</span>
+                  </div>
+                  <select
+                    aria-label={`Статус ${application.title}`}
+                    onChange={(event) => {
+                      const status = event.target.value as ApplicationStatus;
+                      const nextApplications = upsertTrackedApplication(
+                        applications,
+                        {
+                          ...application,
+                          status,
+                          updatedAt: new Date().toISOString()
+                        }
+                      );
+                      setApplications(nextApplications);
+                      window.localStorage.setItem(
+                        "find-job-applications",
+                        JSON.stringify(nextApplications)
+                      );
+                    }}
+                    value={application.status}
+                  >
+                    {Object.entries(applicationStatusLabels).map(
+                      ([status, label]) => (
+                        <option key={status} value={status}>
+                          {label}
+                        </option>
+                      )
+                    )}
+                  </select>
+                  <a
+                    href={application.applyUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Открыть ↗
+                  </a>
+                  <button
+                    className="tracker-delete"
+                    onClick={() => removeApplication(application.jobId)}
+                    type="button"
+                  >
+                    Удалить
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </section>
 
       {selectedJob && (
@@ -856,13 +1055,65 @@ export function JobDashboard() {
                     />
                   </label>
 
-                  <button
-                    className="secondary-button"
-                    onClick={saveDraft}
-                    type="button"
-                  >
-                    Сохранить черновик
-                  </button>
+                  <div className="document-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={saveDraft}
+                      type="button"
+                    >
+                      Сохранить черновик
+                    </button>
+                    <button
+                      className="export-button"
+                      disabled={isExporting}
+                      onClick={() => void exportApplication("docx")}
+                      type="button"
+                    >
+                      Скачать DOCX
+                    </button>
+                    <button
+                      className="export-button"
+                      disabled={isExporting}
+                      onClick={() => void exportApplication("pdf")}
+                      type="button"
+                    >
+                      Скачать PDF
+                    </button>
+                  </div>
+
+                  <div className="application-status-control">
+                    <label>
+                      <span>Статус отклика</span>
+                      <select
+                        onChange={(event) =>
+                          setSelectedApplicationStatus(
+                            event.target.value as ApplicationStatus
+                          )
+                        }
+                        value={selectedApplicationStatus}
+                      >
+                        {Object.entries(applicationStatusLabels).map(
+                          ([status, label]) => (
+                            <option key={status} value={status}>
+                              {label}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </label>
+                    <button
+                      className="primary-button"
+                      onClick={() =>
+                        updateApplication(
+                          selectedJob,
+                          selectedApplicationStatus
+                        )
+                      }
+                      type="button"
+                    >
+                      Добавить в отклики
+                    </button>
+                  </div>
                 </section>
               )}
 

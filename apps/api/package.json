@@ -9,14 +9,18 @@
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "db:migrate": "node --env-file-if-exists=../../.env src/migrate.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.test.json && node --test .test-dist/connectors/*.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/connectors/*.test.js .test-dist/document-export.test.js"
   },
   "dependencies": {
     "@find-job/domain": "0.1.0",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "docx": "^9.5.1",
+    "pdfkit": "^0.17.2",
     "pg": "8.22.0"
   },
   "devDependencies": {
     "@types/node": "24.10.4",
+    "@types/pdfkit": "^0.17.5",
     "@types/pg": "8.20.0",
     "typescript": "5.9.3"
   }

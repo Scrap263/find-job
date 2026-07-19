@@ -4,7 +4,8 @@ import {
   expandRoleTitles,
   filterJobs,
   generateApplicationDraft,
-  sampleJobs
+  sampleJobs,
+  upsertTrackedApplication
 } from "./index.ts";
 
 describe("filterJobs", () => {
@@ -99,5 +100,26 @@ describe("generateApplicationDraft", () => {
       /Подтверждённые достижения пока не добавлены/
     );
     assert.ok(!/\d+ лет|years of experience/i.test(draft.coverLetter));
+  });
+});
+
+describe("upsertTrackedApplication", () => {
+  it("updates one vacancy without creating duplicates", () => {
+    const first = {
+      jobId: "job-1",
+      title: "Analyst",
+      company: "Example",
+      applyUrl: "https://example.com/job",
+      status: "preparing" as const,
+      updatedAt: "2026-07-19T10:00:00.000Z"
+    };
+    const result = upsertTrackedApplication([first], {
+      ...first,
+      status: "applied",
+      updatedAt: "2026-07-19T11:00:00.000Z"
+    });
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0]?.status, "applied");
   });
 });

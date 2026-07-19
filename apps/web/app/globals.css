@@ -666,6 +666,145 @@ h1 {
   justify-self: start;
 }
 
+.document-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-button {
+  background: #173027;
+  border: 1px solid #173027;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 750;
+  padding: 10px 12px;
+}
+
+.export-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.application-status-control {
+  align-items: end;
+  background: #f2f7f3;
+  border-radius: 11px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  padding: 12px;
+}
+
+.application-status-control label {
+  display: grid;
+  gap: 6px;
+}
+
+.application-status-control label > span {
+  color: var(--ink-muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.application-status-control select,
+.tracker-row select {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  font-size: 10px;
+  padding: 9px 10px;
+}
+
+.application-tracker {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin-top: 22px;
+  padding: 20px;
+  scroll-margin-top: 20px;
+}
+
+.tracker-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.tracker-heading h2 {
+  font-size: 18px;
+  margin-bottom: 0;
+}
+
+.tracker-heading > span {
+  background: var(--green-soft);
+  border-radius: 999px;
+  color: var(--green-dark);
+  font-size: 10px;
+  font-weight: 750;
+  padding: 7px 10px;
+}
+
+.tracker-empty {
+  color: var(--ink-muted);
+  font-size: 11px;
+  margin: 16px 0 0;
+}
+
+.tracker-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.tracker-row {
+  align-items: center;
+  background: var(--surface-muted);
+  border-radius: 11px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 170px auto auto;
+  padding: 11px 12px;
+}
+
+.tracker-row strong,
+.tracker-row span {
+  display: block;
+}
+
+.tracker-row strong {
+  font-size: 11px;
+}
+
+.tracker-row span {
+  color: var(--ink-muted);
+  font-size: 9px;
+  margin-top: 3px;
+}
+
+.tracker-row a {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.tracker-delete {
+  background: transparent;
+  border: 0;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  padding: 0;
+}
+
+.tracker-delete:hover {
+  color: #a33838;
+}
+
 .summary-grid {
   display: grid;
   gap: 12px;
@@ -1198,5 +1337,11 @@ input[type="range"] {
   .candidate-heading-actions {
     align-items: flex-end;
     flex-direction: column;
+  }
+
+  .application-status-control,
+  .tracker-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 }
