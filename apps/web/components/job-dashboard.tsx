@@ -2,9 +2,13 @@
 
 import {
   defaultSearchProfile,
+  emptyCandidateProfile,
   expandRoleTitles,
   filterJobs,
+  generateApplicationDraft,
   sampleJobs,
+  type ApplicationDraft,
+  type CandidateProfile,
   type Job,
   type JobRegion,
   type SearchProfile,
@@ -63,6 +67,15 @@ export function JobDashboard() {
   const [aliasInput, setAliasInput] = useState("");
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [candidateProfile, setCandidateProfile] = useState<CandidateProfile>(
+    emptyCandidateProfile
+  );
+  const [candidateSkills, setCandidateSkills] = useState("");
+  const [candidateFacts, setCandidateFacts] = useState("");
+  const [applicationDraft, setApplicationDraft] =
+    useState<ApplicationDraft | null>(null);
+  const [draftMessage, setDraftMessage] = useState("");
 
   async function loadJobs() {
     const apiUrl =
@@ -139,6 +152,73 @@ export function JobDashboard() {
     void runInternationalSearch(nextProfile);
   }
 
+  function openJobAnalysis(job: Job) {
+    setSelectedJob(job);
+    setApplicationDraft(null);
+    setDraftMessage("");
+
+    const storedDraft = window.localStorage.getItem(
+      `find-job-draft:${job.id}`
+    );
+    if (!storedDraft) return;
+
+    try {
+      setApplicationDraft(JSON.parse(storedDraft) as ApplicationDraft);
+      setDraftMessage("Открыт сохранённый черновик.");
+    } catch {
+      window.localStorage.removeItem(`find-job-draft:${job.id}`);
+    }
+  }
+
+  function generateDraft() {
+    if (!selectedJob) return;
+
+    const nextCandidate: CandidateProfile = {
+      ...candidateProfile,
+      skills: candidateSkills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean),
+      facts: candidateFacts
+        .split("\n")
+        .map((fact) => fact.trim())
+        .filter(Boolean)
+    };
+    const draft = generateApplicationDraft(selectedJob, nextCandidate);
+
+    setCandidateProfile(nextCandidate);
+    setApplicationDraft(draft);
+    setDraftMessage(
+      "Черновик собран только из подтверждённых фактов вашего профиля."
+    );
+    window.localStorage.setItem(
+      "find-job-candidate",
+      JSON.stringify(nextCandidate)
+    );
+  }
+
+  function saveDraft() {
+    if (!selectedJob || !applicationDraft) return;
+
+    window.localStorage.setItem(
+      `find-job-draft:${selectedJob.id}`,
+      JSON.stringify(applicationDraft)
+    );
+    setDraftMessage("Черновик сохранён в этом браузере.");
+  }
+
+  function clearCandidateData() {
+    window.localStorage.removeItem("find-job-candidate");
+    if (selectedJob) {
+      window.localStorage.removeItem(`find-job-draft:${selectedJob.id}`);
+    }
+    setCandidateProfile(emptyCandidateProfile);
+    setCandidateSkills("");
+    setCandidateFacts("");
+    setApplicationDraft(null);
+    setDraftMessage("Локальные данные кандидата и черновик удалены.");
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     const apiUrl =
@@ -160,6 +240,34 @@ export function JobDashboard() {
       });
 
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const storedCandidate = window.localStorage.getItem("find-job-candidate");
+    if (!storedCandidate) return;
+
+    let parsed: CandidateProfile;
+    try {
+      parsed = JSON.parse(storedCandidate) as CandidateProfile;
+    } catch {
+      window.localStorage.removeItem("find-job-candidate");
+      return;
+    }
+
+    if (
+      typeof parsed.name === "string" &&
+      typeof parsed.headline === "string" &&
+      Array.isArray(parsed.skills) &&
+      Array.isArray(parsed.facts)
+    ) {
+      const timer = window.setTimeout(() => {
+        setCandidateProfile(parsed);
+        setCandidateSkills(parsed.skills.join(", "));
+        setCandidateFacts(parsed.facts.join("\n"));
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
   }, []);
 
   useEffect(() => {
@@ -565,9 +673,9 @@ export function JobDashboard() {
                         <button
                           className="primary-button"
                           type="button"
-                          onClick={() => toggleSaved(job.id)}
+                          onClick={() => openJobAnalysis(job)}
                         >
-                          {isSaved ? "Сохранено" : "Разобрать вакансию"}
+                          Разобрать вакансию
                         </button>
                         <a href={job.applyUrl} target="_blank" rel="noreferrer">
                           Открыть оригинал ↗
@@ -591,6 +699,182 @@ export function JobDashboard() {
           </div>
         </section>
       </section>
+
+      {selectedJob && (
+        <div className="application-overlay" role="presentation">
+          <section
+            aria-label={`Разбор вакансии ${selectedJob.title}`}
+            className="application-panel"
+          >
+            <header className="application-header">
+              <div>
+                <p className="eyebrow">Подготовка отклика</p>
+                <h2>{selectedJob.title}</h2>
+                <span>
+                  {selectedJob.company} · {selectedJob.location}
+                </span>
+              </div>
+              <button
+                aria-label="Закрыть разбор вакансии"
+                className="profile-close"
+                onClick={() => setSelectedJob(null)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="application-scroll">
+              <section className="vacancy-analysis">
+                <div>
+                  <span>Match</span>
+                  <strong>{selectedJob.match.score}%</strong>
+                </div>
+                <p>{selectedJob.match.reason}</p>
+              </section>
+
+              <section className="candidate-editor">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Подтверждённые данные</p>
+                    <h3>Факты о кандидате</h3>
+                  </div>
+                  <div className="candidate-heading-actions">
+                    <span className="safe-badge">Без выдуманных фактов</span>
+                    <button
+                      className="clear-data-button"
+                      onClick={clearCandidateData}
+                      type="button"
+                    >
+                      Удалить данные
+                    </button>
+                  </div>
+                </div>
+
+                <div className="candidate-fields">
+                  <label className="field">
+                    <span>Имя</span>
+                    <input
+                      onChange={(event) =>
+                        setCandidateProfile((current) => ({
+                          ...current,
+                          name: event.target.value
+                        }))
+                      }
+                      placeholder="Ваше имя"
+                      type="text"
+                      value={candidateProfile.name}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Текущая специализация</span>
+                    <input
+                      onChange={(event) =>
+                        setCandidateProfile((current) => ({
+                          ...current,
+                          headline: event.target.value
+                        }))
+                      }
+                      placeholder="Например, Product Analyst"
+                      type="text"
+                      value={candidateProfile.headline}
+                    />
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>Подтверждённые навыки через запятую</span>
+                  <input
+                    onChange={(event) => setCandidateSkills(event.target.value)}
+                    placeholder="SQL, Python, Tableau"
+                    type="text"
+                    value={candidateSkills}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Достижения — одно на строку</span>
+                  <textarea
+                    onChange={(event) => setCandidateFacts(event.target.value)}
+                    placeholder="Укажите только реальные, проверяемые факты"
+                    rows={4}
+                    value={candidateFacts}
+                  />
+                </label>
+
+                <button
+                  className="primary-button generate-button"
+                  disabled={candidateProfile.name.trim().length < 2}
+                  onClick={generateDraft}
+                  type="button"
+                >
+                  Собрать документы
+                </button>
+              </section>
+
+              {applicationDraft && (
+                <section className="document-editor">
+                  {applicationDraft.skillsToVerify.length > 0 && (
+                    <div className="verification-note">
+                      <strong>Не добавлено без подтверждения:</strong>
+                      <span>
+                        {applicationDraft.skillsToVerify.join(" · ")}
+                      </span>
+                    </div>
+                  )}
+
+                  <label className="document-field">
+                    <span>Адаптированное резюме</span>
+                    <textarea
+                      onChange={(event) =>
+                        setApplicationDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                resumeSummary: event.target.value
+                              }
+                            : current
+                        )
+                      }
+                      rows={10}
+                      value={applicationDraft.resumeSummary}
+                    />
+                  </label>
+
+                  <label className="document-field">
+                    <span>Сопроводительное письмо</span>
+                    <textarea
+                      onChange={(event) =>
+                        setApplicationDraft((current) =>
+                          current
+                            ? { ...current, coverLetter: event.target.value }
+                            : current
+                        )
+                      }
+                      rows={14}
+                      value={applicationDraft.coverLetter}
+                    />
+                  </label>
+
+                  <button
+                    className="secondary-button"
+                    onClick={saveDraft}
+                    type="button"
+                  >
+                    Сохранить черновик
+                  </button>
+                </section>
+              )}
+
+              {draftMessage && (
+                <div className="search-message" role="status">
+                  {draftMessage}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

@@ -8,6 +8,27 @@ export type SearchProfile = {
   aliases: string[];
 };
 
+export type CandidateProfile = {
+  name: string;
+  headline: string;
+  skills: string[];
+  facts: string[];
+};
+
+export type ApplicationDraft = {
+  resumeSummary: string;
+  coverLetter: string;
+  usedSkills: string[];
+  skillsToVerify: string[];
+};
+
+export const emptyCandidateProfile: CandidateProfile = {
+  name: "",
+  headline: "",
+  skills: [],
+  facts: []
+};
+
 export const defaultSearchProfile: SearchProfile = {
   role: "Product Analyst",
   regions: ["europe", "latam", "apac"],
@@ -139,6 +160,85 @@ export function filterJobs(jobs: Job[], filters: JobFilters): Job[] {
       return matchesQuery && matchesWorkplace && matchesScore;
     })
     .sort((left, right) => right.match.score - left.match.score);
+}
+
+export function generateApplicationDraft(
+  job: Job,
+  candidate: CandidateProfile
+): ApplicationDraft {
+  const candidateSkills = new Map(
+    candidate.skills
+      .map((skill) => skill.trim())
+      .filter(Boolean)
+      .map((skill) => [skill.toLowerCase(), skill])
+  );
+  const usedSkills = job.match.matchedSkills.flatMap((skill) => {
+    const verifiedSkill = candidateSkills.get(skill.toLowerCase());
+    return verifiedSkill ? [verifiedSkill] : [];
+  });
+  const skillsToVerify = [
+    ...job.match.matchedSkills.filter(
+      (skill) => !candidateSkills.has(skill.toLowerCase())
+    ),
+    ...job.match.missingSkills
+  ].filter(
+    (skill, index, skills) =>
+      skills.findIndex(
+        (candidateSkill) =>
+          candidateSkill.toLowerCase() === skill.toLowerCase()
+      ) === index
+  );
+  const facts = candidate.facts.map((fact) => fact.trim()).filter(Boolean);
+  const displayName = candidate.name.trim() || "Кандидат";
+  const headline = candidate.headline.trim();
+  const skillLine =
+    usedSkills.length > 0
+      ? `Ключевые подтверждённые навыки: ${usedSkills.join(", ")}.`
+      : "Подтверждённые навыки под эту вакансию пока не добавлены.";
+  const factSection =
+    facts.length > 0
+      ? `Подтверждённый опыт:\n${facts.map((fact) => `• ${fact}`).join("\n")}`
+      : "Подтверждённые достижения пока не добавлены.";
+
+  const resumeSummary = [
+    displayName,
+    headline || `Целевая позиция: ${job.title}`,
+    "",
+    `Интересующая вакансия: ${job.title} в ${job.company}.`,
+    skillLine,
+    "",
+    factSection
+  ].join("\n");
+
+  const introduction = [
+    `Меня зовут ${displayName}. Я хочу откликнуться на позицию «${job.title}».`,
+    headline ? `Моя текущая специализация: ${headline}.` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const coverLetter = [
+    `Здравствуйте, команда ${job.company}!`,
+    introduction,
+    usedSkills.length > 0
+      ? `Для этой роли релевантны мои подтверждённые навыки: ${usedSkills.join(", ")}.`
+      : "",
+    facts.length > 0
+      ? `Из подтверждённого опыта могу отметить:\n${facts
+          .map((fact) => `• ${fact}`)
+          .join("\n")}`
+      : "",
+    "Буду рад обсудить задачи роли и взаимное соответствие ожиданий.",
+    `С уважением,\n${displayName}`
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return {
+    resumeSummary,
+    coverLetter,
+    usedSkills,
+    skillsToVerify
+  };
 }
 
 const day = 86_400_000;

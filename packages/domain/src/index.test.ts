@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   expandRoleTitles,
   filterJobs,
+  generateApplicationDraft,
   sampleJobs
 } from "./index.ts";
 
@@ -67,5 +68,36 @@ describe("expandRoleTitles", () => {
       "Business Intelligence Analyst",
       "BI Analyst"
     ]);
+  });
+});
+
+describe("generateApplicationDraft", () => {
+  it("uses only candidate-provided skills and facts", () => {
+    const draft = generateApplicationDraft(sampleJobs[0]!, {
+      name: "Alex",
+      headline: "Product analyst",
+      skills: ["SQL"],
+      facts: ["Improved activation reporting"]
+    });
+
+    assert.match(draft.resumeSummary, /Improved activation reporting/);
+    assert.match(draft.coverLetter, /SQL/);
+    assert.ok(!draft.usedSkills.includes("Python"));
+    assert.ok(draft.skillsToVerify.includes("Python"));
+  });
+
+  it("does not invent experience when facts are empty", () => {
+    const draft = generateApplicationDraft(sampleJobs[0]!, {
+      name: "Alex",
+      headline: "",
+      skills: [],
+      facts: []
+    });
+
+    assert.match(
+      draft.resumeSummary,
+      /Подтверждённые достижения пока не добавлены/
+    );
+    assert.ok(!/\d+ лет|years of experience/i.test(draft.coverLetter));
   });
 });
