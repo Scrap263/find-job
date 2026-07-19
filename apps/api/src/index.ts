@@ -13,7 +13,15 @@ import {
   type ServerResponse
 } from "node:http";
 import { ArbeitnowConnector } from "./connectors/arbeitnow.js";
+import {
+  defaultGreenhouseBoards,
+  GreenhouseConnector
+} from "./connectors/greenhouse.js";
 import { JobicyConnector, type JobicyRegion } from "./connectors/jobicy.js";
+import {
+  defaultLeverSites,
+  LeverConnector
+} from "./connectors/lever.js";
 import { createDatabase } from "./database.js";
 import {
   createDocxExport,
@@ -246,6 +254,22 @@ const server = createServer(async (request, response) => {
             regions: ["europe"],
             configured: true,
             databaseRequired: false
+          },
+          {
+            code: "greenhouse",
+            name: "Greenhouse",
+            regions: ["europe", "latam", "apac"],
+            configured: true,
+            boards: defaultGreenhouseBoards.length,
+            databaseRequired: false
+          },
+          {
+            code: "lever",
+            name: "Lever",
+            regions: ["europe", "latam", "apac"],
+            configured: true,
+            sites: defaultLeverSites.length,
+            databaseRequired: false
           }
         ],
         meta: {
@@ -348,6 +372,8 @@ const server = createServer(async (request, response) => {
       const titles = expandRoleTitles(role, customAliases).slice(0, 6);
       const jobicy = new JobicyConnector();
       const arbeitnow = new ArbeitnowConnector();
+      const greenhouse = new GreenhouseConnector();
+      const lever = new LeverConnector();
       const searches: Array<
         Promise<{
           source: JobSource;
@@ -401,6 +427,54 @@ const server = createServer(async (request, response) => {
           }))
         );
       }
+
+      searches.push(
+        executeSync(
+          repository,
+          "greenhouse",
+          {
+            text: role,
+            aliases: titles.slice(1),
+            regions,
+            boards: defaultGreenhouseBoards.map((board) => board.token)
+          },
+          () =>
+            greenhouse.search({
+              text: role,
+              aliases: titles.slice(1),
+              regions,
+              matchContext: { role, aliases: titles.slice(1) }
+            })
+        ).then((result) => ({
+          source: "greenhouse",
+          query: role,
+          fetched: result.data.fetched
+        }))
+      );
+
+      searches.push(
+        executeSync(
+          repository,
+          "lever",
+          {
+            text: role,
+            aliases: titles.slice(1),
+            regions,
+            sites: defaultLeverSites.map((site) => site.site)
+          },
+          () =>
+            lever.search({
+              text: role,
+              aliases: titles.slice(1),
+              regions,
+              matchContext: { role, aliases: titles.slice(1) }
+            })
+        ).then((result) => ({
+          source: "lever",
+          query: role,
+          fetched: result.data.fetched
+        }))
+      );
 
       const settled = await Promise.allSettled(searches);
       const completed = settled.flatMap((result) =>
@@ -503,6 +577,92 @@ const server = createServer(async (request, response) => {
           error instanceof Error ? error.message : "Unknown sync error";
         sendJson(response, 502, {
           error: "arbeitnow_sync_failed",
+          message
+        });
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/sync/greenhouse"
+    ) {
+      const board = requestUrl.searchParams.get("board")?.trim() ?? "";
+      const company = requestUrl.searchParams.get("company")?.trim() ?? board;
+      const text =
+        requestUrl.searchParams.get("text")?.trim() ?? "Product Analyst";
+
+      if (!/^[a-zA-Z0-9_-]+$/.test(board) || company.length === 0) {
+        sendJson(response, 400, {
+          error: "invalid_greenhouse_board",
+          message: "A valid board token and company are required"
+        });
+        return;
+      }
+
+      const query = { text, board, company };
+      const connector = new GreenhouseConnector();
+
+      try {
+        const result = await executeSync(
+          repository,
+          "greenhouse",
+          query,
+          () =>
+            connector.search({
+              text,
+              boards: [{ token: board, company }]
+            })
+        );
+        sendJson(response, 200, result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown sync error";
+        sendJson(response, 502, {
+          error: "greenhouse_sync_failed",
+          message
+        });
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/sync/lever"
+    ) {
+      const site = requestUrl.searchParams.get("site")?.trim() ?? "";
+      const company = requestUrl.searchParams.get("company")?.trim() ?? site;
+      const text =
+        requestUrl.searchParams.get("text")?.trim() ?? "Product Analyst";
+
+      if (!/^[a-zA-Z0-9_-]+$/.test(site) || company.length === 0) {
+        sendJson(response, 400, {
+          error: "invalid_lever_site",
+          message: "A valid site token and company are required"
+        });
+        return;
+      }
+
+      const query = { text, site, company };
+      const connector = new LeverConnector();
+
+      try {
+        const result = await executeSync(
+          repository,
+          "lever",
+          query,
+          () =>
+            connector.search({
+              text,
+              sites: [{ site, company }]
+            })
+        );
+        sendJson(response, 200, result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown sync error";
+        sendJson(response, 502, {
+          error: "lever_sync_failed",
           message
         });
       }

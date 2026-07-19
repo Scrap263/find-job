@@ -132,6 +132,11 @@ interface JobSourceConnector {
 - поддерживаются backoff, jitter, лимиты и `Retry-After`;
 - лог содержит source, sync run и external ID, но не персональные данные.
 
+Текущий вертикальный срез реализует четыре адаптера: Jobicy, Arbeitnow,
+Greenhouse Job Board API и Lever Postings API. Greenhouse и Lever опрашиваются
+по публичным доскам работодателей; сбой одной доски изолируется и не отменяет
+результаты остальных компаний.
+
 ## 6. Основные таблицы
 
 ### Пользователь и профиль
@@ -351,4 +356,3 @@ Docker Compose:
 - документы — при отдельном SLA;
 - browser automation — сразу изолировать из-за риска и ресурсов;
 - search index — добавить OpenSearch/Elasticsearch после исчерпания PostgreSQL.
-

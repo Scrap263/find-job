@@ -10,7 +10,7 @@
 
 - веб-дашборд с адаптивным интерфейсом;
 - единая модель вакансии;
-- международный поиск Jobicy и Arbeitnow по Европе, LATAM и APAC;
+- международный поиск Jobicy, Arbeitnow, Greenhouse и Lever по Европе, LATAM и APAC;
 - редактируемый поисковый профиль и синонимы должностей;
 - поиск, формат работы и порог соответствия;
 - объяснимый role-aware match score;
@@ -86,7 +86,14 @@ curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region
 curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region=latam"
 curl -X POST "http://localhost:4000/v1/sync/jobicy?text=Product%20Analyst&region=apac"
 curl -X POST "http://localhost:4000/v1/sync/arbeitnow?text=Product%20Analyst"
+curl -X POST "http://localhost:4000/v1/sync/greenhouse?board=stripe&company=Stripe&text=Product%20Analyst"
+curl -X POST "http://localhost:4000/v1/sync/lever?site=spotify&company=Spotify&text=Product%20Analyst"
 ```
+
+Greenhouse и Lever публикуют вакансии по доскам конкретных работодателей, а не через
+единый глобальный каталог. Общий поиск автоматически проверяет встроенный набор
+международных компаний; endpoints `/v1/sync/greenhouse` и `/v1/sync/lever` позволяют
+подключить любую дополнительную публичную доску по её token/site.
 
 Единый поиск по пользовательскому профилю автоматически расширяет название
 должности и опрашивает выбранные регионы:
