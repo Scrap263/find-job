@@ -6,12 +6,16 @@ import {
   expandRoleTitles,
   filterJobs,
   generateApplicationDraft,
+  normalizeJobBoardToken,
   sampleJobs,
+  upsertJobBoard,
   upsertTrackedApplication,
   type ApplicationStatus,
   type ApplicationDraft,
   type CandidateProfile,
   type Job,
+  type JobBoardConfig,
+  type JobBoardProvider,
   type JobRegion,
   type SearchProfile,
   type TrackedApplication,
@@ -30,7 +34,20 @@ const sourceLabels: Record<Job["source"], string> = {
   jobicy: "Jobicy",
   arbeitnow: "Arbeitnow",
   greenhouse: "Greenhouse",
-  lever: "Lever"
+  lever: "Lever",
+  ashby: "Ashby"
+};
+
+const boardProviderLabels: Record<JobBoardProvider, string> = {
+  greenhouse: "Greenhouse",
+  lever: "Lever",
+  ashby: "Ashby"
+};
+
+const boardTokenPlaceholders: Record<JobBoardProvider, string> = {
+  greenhouse: "stripe или boards.greenhouse.io/stripe",
+  lever: "spotify или jobs.lever.co/spotify",
+  ashby: "notion или jobs.ashbyhq.com/notion"
 };
 
 const regionLabels: Record<JobRegion, string> = {
@@ -46,6 +63,20 @@ const applicationStatusLabels: Record<ApplicationStatus, string> = {
   offer: "Оффер",
   rejected: "Отказ"
 };
+
+function isJobBoardConfig(value: unknown): value is JobBoardConfig {
+  if (!value || typeof value !== "object") return false;
+  const board = value as Record<string, unknown>;
+  return (
+    (board.provider === "greenhouse" ||
+      board.provider === "lever" ||
+      board.provider === "ashby") &&
+    typeof board.token === "string" &&
+    /^[a-zA-Z0-9_-]+$/.test(board.token) &&
+    typeof board.company === "string" &&
+    board.company.trim().length > 0
+  );
+}
 
 function formatSalary(job: Job) {
   if (!job.salary) return "Зарплата не указана";
@@ -76,6 +107,11 @@ export function JobDashboard() {
   const [draftProfile, setDraftProfile] =
     useState<SearchProfile>(defaultSearchProfile);
   const [aliasInput, setAliasInput] = useState("");
+  const [boardProvider, setBoardProvider] =
+    useState<JobBoardProvider>("ashby");
+  const [boardCompany, setBoardCompany] = useState("");
+  const [boardTokenInput, setBoardTokenInput] = useState("");
+  const [boardMessage, setBoardMessage] = useState("");
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchMessage, setSearchMessage] = useState("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -146,9 +182,49 @@ export function JobDashboard() {
   }
 
   function openProfileEditor() {
-    setDraftProfile(profile);
+    setDraftProfile({ ...profile, boards: profile.boards ?? [] });
     setAliasInput(profile.aliases.join(", "));
+    setBoardMessage("");
     setIsProfileOpen(true);
+  }
+
+  function addBoardToDraft() {
+    const token = normalizeJobBoardToken(boardProvider, boardTokenInput);
+    const company = boardCompany.trim();
+
+    if (
+      !/^[a-zA-Z0-9_-]+$/.test(token) ||
+      company.length === 0 ||
+      company.length > 100
+    ) {
+      setBoardMessage("Укажите компанию и корректный token или URL доски.");
+      return;
+    }
+
+    const board: JobBoardConfig = {
+      provider: boardProvider,
+      token,
+      company
+    };
+    setDraftProfile((current) => ({
+      ...current,
+      boards: upsertJobBoard(current.boards ?? [], board)
+    }));
+    setBoardCompany("");
+    setBoardTokenInput("");
+    setBoardMessage(`${company} добавлена в каталог.`);
+  }
+
+  function removeBoardFromDraft(board: JobBoardConfig) {
+    setDraftProfile((current) => ({
+      ...current,
+      boards: (current.boards ?? []).filter(
+        (candidate) =>
+          candidate.provider !== board.provider ||
+          candidate.token.toLowerCase() !== board.token.toLowerCase()
+      )
+    }));
+    setBoardMessage(`${board.company} удалена из каталога.`);
   }
 
   function saveAndSearch() {
@@ -158,7 +234,8 @@ export function JobDashboard() {
       aliases: aliasInput
         .split(",")
         .map((alias) => alias.trim())
-        .filter(Boolean)
+        .filter(Boolean),
+      boards: draftProfile.boards ?? []
     };
 
     setProfile(nextProfile);
@@ -415,8 +492,14 @@ export function JobDashboard() {
       Array.isArray(parsed.aliases)
     ) {
       const timer = window.setTimeout(() => {
-        setProfile(parsed);
-        setDraftProfile(parsed);
+        const nextProfile = {
+          ...parsed,
+          boards: Array.isArray(parsed.boards)
+            ? parsed.boards.filter(isJobBoardConfig).slice(0, 20)
+            : []
+        };
+        setProfile(nextProfile);
+        setDraftProfile(nextProfile);
       }, 0);
 
       return () => window.clearTimeout(timer);
@@ -482,6 +565,9 @@ export function JobDashboard() {
           <div className="profile-label">Активный поиск</div>
           <strong>{profile.role}</strong>
           <span>{profile.regions.map((region) => regionLabels[region]).join(" · ")}</span>
+          {(profile.boards?.length ?? 0) > 0 && (
+            <small>{profile.boards.length} своих досок</small>
+          )}
           <button type="button" onClick={openProfileEditor}>
             Настроить
           </button>
@@ -598,6 +684,106 @@ export function JobDashboard() {
                   .join(" · ") || "добавьте должность, чтобы увидеть варианты"}
               </p>
             </div>
+
+            <section className="board-catalog" aria-label="Каталог компаний">
+              <div className="board-catalog-heading">
+                <div>
+                  <h3>Каталог компаний</h3>
+                  <p>
+                    Добавьте публичную ATS-доску — она войдёт в каждый поиск.
+                  </p>
+                </div>
+                <span>{draftProfile.boards?.length ?? 0} добавлено</span>
+              </div>
+
+              <div className="board-catalog-form">
+                <label>
+                  <span>Платформа</span>
+                  <select
+                    aria-label="Платформа вакансий"
+                    onChange={(event) => {
+                      setBoardProvider(
+                        event.target.value as JobBoardProvider
+                      );
+                      setBoardMessage("");
+                    }}
+                    value={boardProvider}
+                  >
+                    {(
+                      Object.keys(boardProviderLabels) as JobBoardProvider[]
+                    ).map((provider) => (
+                      <option key={provider} value={provider}>
+                        {boardProviderLabels[provider]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>Компания</span>
+                  <input
+                    aria-label="Название компании"
+                    onChange={(event) => setBoardCompany(event.target.value)}
+                    placeholder="Например, Notion"
+                    type="text"
+                    value={boardCompany}
+                  />
+                </label>
+
+                <label className="board-token-field">
+                  <span>Token или careers URL</span>
+                  <input
+                    aria-label="Token или URL доски"
+                    onChange={(event) =>
+                      setBoardTokenInput(event.target.value)
+                    }
+                    placeholder={boardTokenPlaceholders[boardProvider]}
+                    type="text"
+                    value={boardTokenInput}
+                  />
+                </label>
+
+                <button
+                  className="board-add-button"
+                  disabled={
+                    boardCompany.trim().length === 0 ||
+                    boardTokenInput.trim().length === 0 ||
+                    (draftProfile.boards?.length ?? 0) >= 20
+                  }
+                  onClick={addBoardToDraft}
+                  type="button"
+                >
+                  Добавить
+                </button>
+              </div>
+
+              {boardMessage && (
+                <p className="board-catalog-message" role="status">
+                  {boardMessage}
+                </p>
+              )}
+
+              {(draftProfile.boards?.length ?? 0) > 0 && (
+                <div className="board-catalog-list">
+                  {draftProfile.boards.map((board) => (
+                    <article
+                      key={`${board.provider}:${board.token.toLowerCase()}`}
+                    >
+                      <span>{boardProviderLabels[board.provider]}</span>
+                      <strong>{board.company}</strong>
+                      <code>{board.token}</code>
+                      <button
+                        aria-label={`Удалить ${board.company} из каталога`}
+                        onClick={() => removeBoardFromDraft(board)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
 
             <div className="profile-actions">
               <button

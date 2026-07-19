@@ -4,7 +4,9 @@ import {
   expandRoleTitles,
   filterJobs,
   generateApplicationDraft,
+  normalizeJobBoardToken,
   sampleJobs,
+  upsertJobBoard,
   upsertTrackedApplication
 } from "./index.ts";
 
@@ -68,6 +70,38 @@ describe("expandRoleTitles", () => {
       "Data Analyst",
       "Business Intelligence Analyst",
       "BI Analyst"
+    ]);
+  });
+});
+
+describe("job board catalog", () => {
+  it("extracts tokens from public board URLs", () => {
+    assert.equal(
+      normalizeJobBoardToken(
+        "greenhouse",
+        "https://boards-api.greenhouse.io/v1/boards/stripe/jobs"
+      ),
+      "stripe"
+    );
+    assert.equal(
+      normalizeJobBoardToken("lever", "https://jobs.lever.co/spotify"),
+      "spotify"
+    );
+    assert.equal(
+      normalizeJobBoardToken("ashby", "https://jobs.ashbyhq.com/notion"),
+      "notion"
+    );
+    assert.equal(normalizeJobBoardToken("ashby", "supabase"), "supabase");
+  });
+
+  it("updates a duplicate board instead of adding it twice", () => {
+    const result = upsertJobBoard(
+      [{ provider: "ashby", token: "notion", company: "Old" }],
+      { provider: "ashby", token: "Notion", company: "Notion" }
+    );
+
+    assert.deepEqual(result, [
+      { provider: "ashby", token: "Notion", company: "Notion" }
     ]);
   });
 });

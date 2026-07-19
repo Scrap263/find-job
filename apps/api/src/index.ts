@@ -1,8 +1,11 @@
 import {
   expandRoleTitles,
   filterJobs,
+  normalizeJobBoardToken,
   sampleJobs,
   type Job,
+  type JobBoardConfig,
+  type JobBoardProvider,
   type JobRegion,
   type JobSource,
   type WorkplaceType
@@ -13,6 +16,10 @@ import {
   type ServerResponse
 } from "node:http";
 import { ArbeitnowConnector } from "./connectors/arbeitnow.js";
+import {
+  AshbyConnector,
+  defaultAshbyBoards
+} from "./connectors/ashby.js";
 import {
   defaultGreenhouseBoards,
   GreenhouseConnector
@@ -98,6 +105,56 @@ async function readJsonBody(request: IncomingMessage) {
 
 function isJobRegion(value: unknown): value is JobRegion {
   return value === "europe" || value === "latam" || value === "apac";
+}
+
+function isJobBoardProvider(value: unknown): value is JobBoardProvider {
+  return value === "greenhouse" || value === "lever" || value === "ashby";
+}
+
+function parseJobBoards(value: unknown): JobBoardConfig[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, 20).flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const board = candidate as Record<string, unknown>;
+    if (
+      !isJobBoardProvider(board.provider) ||
+      typeof board.token !== "string" ||
+      typeof board.company !== "string"
+    ) {
+      return [];
+    }
+
+    const token = normalizeJobBoardToken(board.provider, board.token);
+    const company = board.company.trim();
+    if (
+      !/^[a-zA-Z0-9_-]+$/.test(token) ||
+      company.length === 0 ||
+      company.length > 100
+    ) {
+      return [];
+    }
+
+    return [{ provider: board.provider, token, company }];
+  });
+}
+
+function mergeProviderBoards<T>(
+  defaults: T[],
+  customBoards: JobBoardConfig[],
+  provider: JobBoardProvider,
+  key: (board: T) => string,
+  create: (board: JobBoardConfig) => T
+) {
+  const boards = new Map(
+    defaults.map((board) => [key(board).toLowerCase(), board])
+  );
+  for (const board of customBoards) {
+    if (board.provider === provider) {
+      boards.set(board.token.toLowerCase(), create(board));
+    }
+  }
+  return [...boards.values()];
 }
 
 function parseDocumentExportInput(body: unknown): DocumentExportInput | null {
@@ -270,6 +327,14 @@ const server = createServer(async (request, response) => {
             configured: true,
             sites: defaultLeverSites.length,
             databaseRequired: false
+          },
+          {
+            code: "ashby",
+            name: "Ashby",
+            regions: ["europe", "latam", "apac"],
+            configured: true,
+            boards: defaultAshbyBoards.length,
+            databaseRequired: false
           }
         ],
         meta: {
@@ -360,6 +425,7 @@ const server = createServer(async (request, response) => {
         requestedRegions.length > 0
           ? [...new Set(requestedRegions)]
           : ["europe", "latam", "apac"];
+      const customBoards = parseJobBoards(candidate.boards);
 
       if (role.length < 2) {
         sendJson(response, 400, {
@@ -369,11 +435,36 @@ const server = createServer(async (request, response) => {
         return;
       }
 
+      const previousMemoryJobs = memoryJobs;
+      if (!repository) memoryJobs = [];
+
       const titles = expandRoleTitles(role, customAliases).slice(0, 6);
       const jobicy = new JobicyConnector();
       const arbeitnow = new ArbeitnowConnector();
       const greenhouse = new GreenhouseConnector();
       const lever = new LeverConnector();
+      const ashby = new AshbyConnector();
+      const greenhouseBoards = mergeProviderBoards(
+        defaultGreenhouseBoards,
+        customBoards,
+        "greenhouse",
+        (board) => board.token,
+        (board) => ({ token: board.token, company: board.company })
+      );
+      const leverSites = mergeProviderBoards(
+        defaultLeverSites,
+        customBoards,
+        "lever",
+        (site) => site.site,
+        (board) => ({ site: board.token, company: board.company })
+      );
+      const ashbyBoards = mergeProviderBoards(
+        defaultAshbyBoards,
+        customBoards,
+        "ashby",
+        (board) => board.name,
+        (board) => ({ name: board.token, company: board.company })
+      );
       const searches: Array<
         Promise<{
           source: JobSource;
@@ -436,13 +527,14 @@ const server = createServer(async (request, response) => {
             text: role,
             aliases: titles.slice(1),
             regions,
-            boards: defaultGreenhouseBoards.map((board) => board.token)
+            boards: greenhouseBoards.map((board) => board.token)
           },
           () =>
             greenhouse.search({
               text: role,
               aliases: titles.slice(1),
               regions,
+              boards: greenhouseBoards,
               matchContext: { role, aliases: titles.slice(1) }
             })
         ).then((result) => ({
@@ -460,17 +552,43 @@ const server = createServer(async (request, response) => {
             text: role,
             aliases: titles.slice(1),
             regions,
-            sites: defaultLeverSites.map((site) => site.site)
+            sites: leverSites.map((site) => site.site)
           },
           () =>
             lever.search({
               text: role,
               aliases: titles.slice(1),
               regions,
+              sites: leverSites,
               matchContext: { role, aliases: titles.slice(1) }
             })
         ).then((result) => ({
           source: "lever",
+          query: role,
+          fetched: result.data.fetched
+        }))
+      );
+
+      searches.push(
+        executeSync(
+          repository,
+          "ashby",
+          {
+            text: role,
+            aliases: titles.slice(1),
+            regions,
+            boards: ashbyBoards.map((board) => board.name)
+          },
+          () =>
+            ashby.search({
+              text: role,
+              aliases: titles.slice(1),
+              regions,
+              boards: ashbyBoards,
+              matchContext: { role, aliases: titles.slice(1) }
+            })
+        ).then((result) => ({
+          source: "ashby",
           query: role,
           fetched: result.data.fetched
         }))
@@ -483,6 +601,7 @@ const server = createServer(async (request, response) => {
       const failed = settled.length - completed.length;
 
       if (completed.length === 0) {
+        if (!repository) memoryJobs = previousMemoryJobs;
         sendJson(response, 502, {
           error: "search_failed",
           message: "All international sources failed"
@@ -663,6 +782,50 @@ const server = createServer(async (request, response) => {
           error instanceof Error ? error.message : "Unknown sync error";
         sendJson(response, 502, {
           error: "lever_sync_failed",
+          message
+        });
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/sync/ashby"
+    ) {
+      const rawBoard = requestUrl.searchParams.get("board")?.trim() ?? "";
+      const board = normalizeJobBoardToken("ashby", rawBoard);
+      const company = requestUrl.searchParams.get("company")?.trim() ?? board;
+      const text =
+        requestUrl.searchParams.get("text")?.trim() ?? "Product Analyst";
+
+      if (!/^[a-zA-Z0-9_-]+$/.test(board) || company.length === 0) {
+        sendJson(response, 400, {
+          error: "invalid_ashby_board",
+          message: "A valid board name and company are required"
+        });
+        return;
+      }
+
+      const query = { text, board, company };
+      const connector = new AshbyConnector();
+
+      try {
+        const result = await executeSync(
+          repository,
+          "ashby",
+          query,
+          () =>
+            connector.search({
+              text,
+              boards: [{ name: board, company }]
+            })
+        );
+        sendJson(response, 200, result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown sync error";
+        sendJson(response, 502, {
+          error: "ashby_sync_failed",
           message
         });
       }

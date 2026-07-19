@@ -11,7 +11,8 @@ VALUES
   ('jobicy', 'Jobicy'),
   ('arbeitnow', 'Arbeitnow'),
   ('greenhouse', 'Greenhouse'),
-  ('lever', 'Lever')
+  ('lever', 'Lever'),
+  ('ashby', 'Ashby')
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name,
   updated_at = NOW();

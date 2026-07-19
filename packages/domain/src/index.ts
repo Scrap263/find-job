@@ -1,11 +1,24 @@
 export type WorkplaceType = "remote" | "hybrid" | "onsite";
-export type JobSource = "jobicy" | "arbeitnow" | "greenhouse" | "lever";
+export type JobSource =
+  | "jobicy"
+  | "arbeitnow"
+  | "greenhouse"
+  | "lever"
+  | "ashby";
 export type JobRegion = "europe" | "latam" | "apac";
+export type JobBoardProvider = "greenhouse" | "lever" | "ashby";
+
+export type JobBoardConfig = {
+  provider: JobBoardProvider;
+  token: string;
+  company: string;
+};
 
 export type SearchProfile = {
   role: string;
   regions: JobRegion[];
   aliases: string[];
+  boards: JobBoardConfig[];
 };
 
 export type CandidateProfile = {
@@ -48,8 +61,59 @@ export const emptyCandidateProfile: CandidateProfile = {
 export const defaultSearchProfile: SearchProfile = {
   role: "Product Analyst",
   regions: ["europe", "latam", "apac"],
-  aliases: []
+  aliases: [],
+  boards: []
 };
+
+export function normalizeJobBoardToken(
+  provider: JobBoardProvider,
+  value: string
+) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (
+    !/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) &&
+    !trimmed.includes(".") &&
+    !trimmed.includes("/")
+  ) {
+    return trimmed;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`
+    );
+    const segments = url.pathname.split("/").filter(Boolean);
+
+    if (provider === "greenhouse") {
+      const boardsIndex = segments.findIndex(
+        (segment) => segment.toLowerCase() === "boards"
+      );
+      if (boardsIndex >= 0) return segments[boardsIndex + 1] ?? "";
+      return segments[0] ?? "";
+    }
+
+    return segments[0] ?? "";
+  } catch {
+    return trimmed.replace(/^\/+|\/+$/g, "");
+  }
+}
+
+export function upsertJobBoard(
+  boards: JobBoardConfig[],
+  nextBoard: JobBoardConfig
+) {
+  const key = `${nextBoard.provider}:${nextBoard.token.toLowerCase()}`;
+  return [
+    ...boards.filter(
+      (board) =>
+        `${board.provider}:${board.token.toLowerCase()}` !== key
+    ),
+    nextBoard
+  ];
+}
 
 const roleAliasGroups = [
   {
