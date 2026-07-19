@@ -6,7 +6,15 @@
 
 ## Состояние проекта
 
-Репозиторий находится на стадии проектирования MVP.
+Реализован первый вертикальный срез MVP:
+
+- веб-дашборд с адаптивным интерфейсом;
+- единая модель вакансии;
+- поиск, формат работы и порог соответствия;
+- объяснимый match score;
+- локальное сохранение вакансий в рамках сессии;
+- Node.js API с `/health` и `/v1/jobs`;
+- тесты доменной фильтрации.
 
 - [Техническое задание](docs/PRODUCT_SPEC.md)
 - [Архитектура](docs/ARCHITECTURE.md)
@@ -22,10 +30,32 @@
 ## Предлагаемый стек
 
 - Frontend: Next.js, TypeScript, Tailwind CSS
-- Backend: NestJS, TypeScript
+- Backend MVP: Node.js HTTP API, TypeScript
 - Database: PostgreSQL + pgvector
 - Очереди и планировщик: Redis + BullMQ
 - Файлы: S3-совместимое хранилище
 - Автоматизация форм: Playwright, только в контролируемой сессии пользователя
-- Монорепозиторий: pnpm + Turborepo
+- Монорепозиторий: npm workspaces
 
+## Локальный запуск
+
+Требования: Node.js 24+.
+
+```bash
+npm install
+npm run dev
+```
+
+После запуска:
+
+- web: `http://localhost:3000`;
+- API: `http://localhost:4000`;
+- health check: `http://localhost:4000/health`.
+
+Основные проверки:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
